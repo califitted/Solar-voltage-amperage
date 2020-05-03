@@ -1,15 +1,3 @@
-// Adafruit IO Temperature & Humidity Example
-// Tutorial Link: https://learn.adafruit.com/adafruit-io-basics-temperature-and-humidity
-//
-// Adafruit invests time and resources providing this open source code.
-// Please support Adafruit and open source hardware by purchasing
-// products from Adafruit!
-//
-// Written by Todd Treece for Adafruit Industries
-// Copyright (c) 2016-2017 Adafruit Industries
-// Licensed under the MIT license.
-//
-// All text above must be included in any redistribution.
 
 /************************** Configuration ***********************************/
 
@@ -20,47 +8,25 @@
 
 /************************ Example Starts Here *******************************/
 #include <Adafruit_Sensor.h>
-#include <DHT.h>
-//#include <DHT_U.h>
+#include <Wire.h>
+#include <Adafruit_INA219.h>
 
-// pin connected to DH22 data line
-#define DATA_PIN 4
-#define DHTTYPE DHT22
-
-// create DHT22 instance
-// DHT_Unified dht(DATA_PIN, DHTTYPE);
- DHT dht(DATA_PIN, DHTTYPE);
+Adafruit_INA219 ina219;
 
 // set up the 'temperature' and 'humidity' feeds
-AdafruitIO_Feed *temperature = io.feed("sourd-dot-io-dot-tC");
-AdafruitIO_Feed *temperatureF = io.feed("sourd-dot-io-dot-tF");
-AdafruitIO_Feed *humidity = io.feed("sourd-dot-io-dot-h");
-AdafruitIO_Feed *distance = io.feed("sourd-dot-io-dot-d");
-
-/*************************** Ultrasonic sensor *******************************/
-const int trigPin = 2;  //D4
-const int echoPin = 0;  //D3
-
-int Vo;
-float Vo_scal, logR2, R2, T, Tc;
-float c1 = 1.009249522e-03, c2 = 2.378405444e-04, c3 = 2.019202697e-07;
-long duration; 
-float distancecm;
+AdafruitIO_Feed *voltage = io.feed("solar.solar-panel-voltage");
+AdafruitIO_Feed *power = io.feed("solar.solar-panel-power");
+AdafruitIO_Feed *current = io.feed("solar.solar-panel-current");
 
 void setup() {
 
-  pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
-  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
-
   // start the serial connection
   Serial.begin(115200);
-  //Serial.begin(74880); 
   // wait for serial monitor to open
-  while(! Serial);
-
-  // initialize dht22
-  dht.begin();
-
+  while(! Serial) {
+      // will pause Zero, Leonardo, etc until serial console opens
+      delay(1);
+  }
   // connect to io.adafruit.com
   Serial.print("Connecting to Adafruit IO");
   io.connect();
@@ -75,6 +41,19 @@ void setup() {
   Serial.println();
   Serial.println(io.statusText());
 
+  // Initialize the INA219.
+  // By default the initialization will use the largest range (32V, 2A).  However
+  // you can call a setCalibration function to change this range (see comments).
+  if (! ina219.begin()) {
+    Serial.println("Failed to find INA219 chip");
+    // while (1) { delay(10); }
+  }
+  // To use a slightly lower 32V, 1A range (higher precision on amps):
+  //ina219.setCalibration_32V_1A();
+  // Or to use a lower 16V, 400mA range (higher precision on volts and amps):
+  //ina219.setCalibration_16V_400mA();
+  
+  Serial.println("Measuring voltage and current with INA219 ...");
 }
 
 void loop() {
@@ -88,68 +67,31 @@ void loop() {
   // io.adafruit.com, and processes any incoming data.
   io.run();
 
-  // sensors_event_t event;
-  // dht.temperature().getEvent(&event);
-  // dht.humidity().getEvent(&event);
+  // float voltage_value = 12.0;
   
-//  Vo = analogRead(THERMISTORPIN);
-//  Vo_scal = Vo; //*(5.0/3.3); // or Vo if V_in and V_analogref are the same...
-//  R2 =  SERIESRESISTOR/(1023.0/Vo_scal-1); 
-//  logR2 = log(R2);
-//  T = (1.0 / (c1 + c2*logR2 + c3*logR2*logR2*logR2));
-//  float celsius = T - 273.15;
-//  float fahrenheit = (celsius * 1.8) + 32;
+  float shuntvoltage = 0;
+  float busvoltage = 0;
+  float current_mA = 0;
+  float loadvoltage = 0;
+  float power_mW = 0;
 
-  // Reading temperature or humidity takes about 250 milliseconds!
-  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-  float humidity_percentage = dht.readHumidity();
-  // Read temperature as Celsius (the default)
-  float celsius = dht.readTemperature();
-  // Read temperature as Fahrenheit (isFahrenheit = true)
-  float fahrenheit = dht.readTemperature(true);
-  
-  // save fahrenheit (or celsius) to Adafruit IO
-  temperature->save(celsius);
-  temperatureF->save(fahrenheit);
-  // save humidity to Adafruit IO
-  humidity->save(humidity_percentage);
-      
-  Serial.print("celsius: ");
-  Serial.print(celsius);
-  Serial.println("C");
+  shuntvoltage = ina219.getShuntVoltage_mV();
+  busvoltage = ina219.getBusVoltage_V();
+  current_mA = ina219.getCurrent_mA();
+  power_mW = ina219.getPower_mW();
+  loadvoltage = busvoltage + (shuntvoltage / 1000);
 
-  Serial.print("fahrenheit: ");
-  Serial.print(fahrenheit);
-  Serial.println("F");
+  current->save(current_mA); 
+  power->save(power_mW);
+  voltage->save(loadvoltage);
   
-  Serial.print("humidity: ");
-  Serial.print(humidity_percentage);
-  Serial.println("%");
+  Serial.print("Bus Voltage:   "); Serial.print(busvoltage); Serial.println(" V");
+  Serial.print("Shunt Voltage: "); Serial.print(shuntvoltage); Serial.println(" mV");
+  Serial.print("Load Voltage:  "); Serial.print(loadvoltage); Serial.println(" V");
+  Serial.print("Current:       "); Serial.print(current_mA); Serial.println(" mA");
+  Serial.print("Power:         "); Serial.print(power_mW); Serial.println(" mW");
+  Serial.println("");
 
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  
-  // Sets the trigPin on HIGH state for 10 micro seconds
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-  
-  // Reads the echoPin, returns the sound wave travel time in microseconds
-  duration = pulseIn(echoPin, HIGH);
-
-  if (isnan(humidity_percentage) || isnan(celsius) || isnan(fahrenheit)) {
-    Serial.println(F("Failed to read from DHT sensor!"));
-    return;
-  }
-  
-  // Calculating the distance
-  distancecm = duration*0.034/2;
-  // Prints the distance on the Serial Monitor
-  Serial.print("Distance: ");
-  Serial.println(distancecm);
-
-  // save distance to Adafruit IO
-  distance->save(distancecm);
-  
+  delay(2000);
 
 }
