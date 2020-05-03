@@ -1,254 +1,155 @@
+// Adafruit IO Temperature & Humidity Example
+// Tutorial Link: https://learn.adafruit.com/adafruit-io-basics-temperature-and-humidity
+//
+// Adafruit invests time and resources providing this open source code.
+// Please support Adafruit and open source hardware by purchasing
+// products from Adafruit!
+//
+// Written by Todd Treece for Adafruit Industries
+// Copyright (c) 2016-2017 Adafruit Industries
+// Licensed under the MIT license.
+//
+// All text above must be included in any redistribution.
 
+/************************** Configuration ***********************************/
 
-
-
-
-
-
-
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-#include <WiFiUdp.h>
-#include <functional>
-#include "Switch.h"
-#include "UpnpBroadcastResponder.h"
-#include "CallbackFunction.h"
+// edit the config.h tab and enter your Adafruit IO credentials
+// and any additional configuration needed for WiFi, cellular,
+// or ethernet clients.
 #include "config.h"
 
+/************************ Example Starts Here *******************************/
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+//#include <DHT_U.h>
 
-// prototypes
-boolean connectWifi();
+// pin connected to DH22 data line
+#define DATA_PIN 4
+#define DHTTYPE DHT22
 
-//on/off callbacks
-void solarOn();
-void solarOff();
-void sickOn();
-void sickOff();
-void lightOn();
-void lightOff();
-void hardDriveOn();
-void hardDriveOff();
-void meterOn();
-void meterOff();
-void outletTwoOn();
-void outletTwoOff();
-void outletThreeOn();
-void outletThreeOff();
-void outletFourOn();
-void outletFourOff();
+// create DHT22 instance
+// DHT_Unified dht(DATA_PIN, DHTTYPE);
+ DHT dht(DATA_PIN, DHTTYPE);
 
-// Change this before you flash
-const char* ssid = WIFI_SSID;
-const char* password = WIFI_PASSWORD;
+// set up the 'temperature' and 'humidity' feeds
+AdafruitIO_Feed *temperature = io.feed("sourd-dot-io-dot-tC");
+AdafruitIO_Feed *temperatureF = io.feed("sourd-dot-io-dot-tF");
+AdafruitIO_Feed *humidity = io.feed("sourd-dot-io-dot-h");
+AdafruitIO_Feed *distance = io.feed("sourd-dot-io-dot-d");
 
-boolean wifiConnected = false;
+/*************************** Ultrasonic sensor *******************************/
+const int trigPin = 2;  //D4
+const int echoPin = 0;  //D3
 
-UpnpBroadcastResponder upnpBroadcastResponder;
+int Vo;
+float Vo_scal, logR2, R2, T, Tc;
+float c1 = 1.009249522e-03, c2 = 2.378405444e-04, c3 = 2.019202697e-07;
+long duration; 
+float distancecm;
 
-Switch *solar = NULL;
-Switch *sick = NULL;
-Switch *light = NULL;
-Switch *hardDrive = NULL;
-Switch *meter = NULL;
-Switch *outletTwo = NULL;
-Switch *outletThree = NULL;
-Switch *outletFour = NULL;
+void setup() {
 
-//relay pin setup for funct
-int relayOne = 5;
-int relayTwo = 4;
-int relayThree = 0;
-int relayFour = 2;
-int relayFive = 14;
-int relaySix = 12;
-int relaySeven = 13;
-int relayEight = 15;
+  pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
+  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
 
+  // start the serial connection
+  Serial.begin(115200);
+  //Serial.begin(74880); 
+  // wait for serial monitor to open
+  while(! Serial);
 
-void setup()
-{
+  // initialize dht22
+  dht.begin();
 
- Serial.begin(115200);
+  // connect to io.adafruit.com
+  Serial.print("Connecting to Adafruit IO");
+  io.connect();
 
-  // Initialise wifi connection
-  wifiConnected = connectWifi();
-
-  if(wifiConnected){
-    upnpBroadcastResponder.beginUdpMulticast();
-
-    // Define your switches here. Max 14
-    // Format: Alexa invocation name, local port no, on callback, off callback
-    solar = new Switch("solar", 80, solarOn, solarOff);
-    sick = new Switch("sick", 81, sickOn, sickOff);
-    light = new Switch("light", 82, lightOn, lightOff);
-    hardDrive = new Switch("hard Drive", 83, hardDriveOn, hardDriveOff);
-    meter = new Switch("meter", 84,meterOn, meterOff);
-    outletTwo = new Switch("Outlet Two", 85, outletTwoOn, outletTwoOff);
-    outletThree = new Switch("Outlet Three", 86, outletThreeOn, outletThreeOff);
-    outletFour = new Switch("Outlet Four", 87,outletFourOn, outletFourOff);
-
-    Serial.println("Adding switches upnp broadcast responder");
-    upnpBroadcastResponder.addDevice(*solar);
-    upnpBroadcastResponder.addDevice(*sick);
-    upnpBroadcastResponder.addDevice(*light);
-    upnpBroadcastResponder.addDevice(*hardDrive);
-    upnpBroadcastResponder.addDevice(*meter);
-    upnpBroadcastResponder.addDevice(*outletTwo);
-    upnpBroadcastResponder.addDevice(*outletThree);
-    upnpBroadcastResponder.addDevice(*outletFour);
-
-    //relay pins setup i Used D1,D2,D3,D4,D5,D6,D7,D8 followed as assigned below, if you are willing to change Pin or planning to use extra please Check Image in Github File..:)
-    pinMode (5, OUTPUT);
-    pinMode (4, OUTPUT);
-    pinMode (0, OUTPUT);
-    pinMode (2, OUTPUT);
-    pinMode (14, OUTPUT);
-    pinMode (12, OUTPUT);
-    pinMode (13, OUTPUT);
-    pinMode (15, OUTPUT);
-    //digitalWrite (5,HIGH);
-    //digitalWrite (4,HIGH);
-    //digitalWrite (0,HIGH);
-    //digitalWrite (2,HIGH);
-    //digitalWrite (14,HIGH);
-    //digitalWrite (12,HIGH);
-    //digitalWrite (13,HIGH);
-    //digitalWrite (15,HIGH);
-  }
-}
-
-void loop()
-{
-   if(wifiConnected){
-      upnpBroadcastResponder.serverLoop();
-
-      solar->serverLoop();
-      sick->serverLoop();
-      hardDrive->serverLoop();
-      hardDrive->serverLoop();
-      meter->serverLoop();
-      outletTwo->serverLoop();
-      outletThree->serverLoop();
-      outletFour->serverLoop();
-   }
-}
-
-void solarOff() {
-    Serial.print("Switch 1 turn off ...");
-    digitalWrite(relayOne, HIGH);   // sets relayOne off
-}
-
-void solarOn() {
-    Serial.print("Switch 1 turn on ...");
-    digitalWrite(relayOne, LOW);   // sets relayOne on
-}
-
-void sickOff() {
-    Serial.print("Switch 2 turn off ...");
-    digitalWrite(relayTwo, HIGH);   // sets relayOne off
-}
-
-void sickOn() {
-  Serial.print("Switch 2 turn on ...");
-  delay(1500);
-  digitalWrite(relayTwo, LOW);   // sets relayOne on
-}
-
-void lightOff() {
-    Serial.print("Switch 3 turn off ...");
-    digitalWrite(relayThree, LOW);   // sets relayOne on
-}
-
-void lightOn() {
-  Serial.print("Switch 3 turn on ...");
-  digitalWrite(relayThree, HIGH);   // sets relayOne on
-}
-
-void hardDriveOff() {
-    Serial.print("Switch4 turn off ...");
-    digitalWrite(relayFour, HIGH);   // sets relayOne on
-}
-
-void hardDriveOn() {
-  Serial.print("Switch 4 turn on ...");
-  digitalWrite(relayFour, LOW);   // sets relayOne on
-}
-
-//sockets
-
-void meterOff() {
-    Serial.print("Socket 1 turn off ...");
-    digitalWrite(relayFive, LOW);   // sets relayOne on
-}
-
-void meterOn() {
-    Serial.print("Socket 1turn on ...");
-    digitalWrite(relayFive, HIGH);   // sets relayOne off
-}
-
-void outletTwoOff() {
-    Serial.print("Socket 2 turn off ...");
-    digitalWrite(relaySix, LOW);   // sets relayOne on
-}
-
-void outletTwoOn() {
-  Serial.print("Socket 2 turn on ...");
-  digitalWrite(relaySix, HIGH);   // sets relayOne on
-}
-
-void outletThreeOff() {
-    Serial.print("Socket 3 turn off ...");
-    digitalWrite(relaySeven, LOW);   // sets relayOne on
-}
-
-void outletThreeOn() {
-    Serial.print("Socket 3 turn on ...");
-    digitalWrite(relaySeven, HIGH);   // sets relayOne off
-}
-
-void outletFourOff() {
-    Serial.print("Socket  4 turn off ...");
-    digitalWrite(relayEight, LOW);   // sets relayOne on
-}
-
-void outletFourOn() {
-  Serial.print("Socket 4 turn on ...");
-  digitalWrite(relayEight, HIGH);   // sets relayOne on
-}
-
-// connect to wifi – returns true if successful or false if not
-boolean connectWifi(){
-  boolean state = true;
-  int i = 0;
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  Serial.println("");
-  Serial.println("Connecting to WiFi");
-
-  // Wait for connection
-  Serial.print("Connecting ...");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+  // wait for a connection
+  while(io.status() < AIO_CONNECTED) {
     Serial.print(".");
-    if (i > 10){
-      state = false;
-      break;
-    }
-    i++;
+    delay(500);
   }
 
-  if (state){
-    Serial.println("");
-    Serial.print("Connected to ");
-    Serial.println(ssid);
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  }
-  else {
-    Serial.println("");
-    Serial.println("Connection failed.");
-  }
+  // we are connected
+  Serial.println();
+  Serial.println(io.statusText());
 
-  return state;
+}
+
+void loop() {
+
+    // wait 5 seconds (5000 milliseconds == 5 seconds)
+  delay(30000);
+
+  // io.run(); is required for all sketches.
+  // it should always be present at the top of your loop
+  // function. it keeps the client connected to
+  // io.adafruit.com, and processes any incoming data.
+  io.run();
+
+  // sensors_event_t event;
+  // dht.temperature().getEvent(&event);
+  // dht.humidity().getEvent(&event);
+  
+//  Vo = analogRead(THERMISTORPIN);
+//  Vo_scal = Vo; //*(5.0/3.3); // or Vo if V_in and V_analogref are the same...
+//  R2 =  SERIESRESISTOR/(1023.0/Vo_scal-1); 
+//  logR2 = log(R2);
+//  T = (1.0 / (c1 + c2*logR2 + c3*logR2*logR2*logR2));
+//  float celsius = T - 273.15;
+//  float fahrenheit = (celsius * 1.8) + 32;
+
+  // Reading temperature or humidity takes about 250 milliseconds!
+  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+  float humidity_percentage = dht.readHumidity();
+  // Read temperature as Celsius (the default)
+  float celsius = dht.readTemperature();
+  // Read temperature as Fahrenheit (isFahrenheit = true)
+  float fahrenheit = dht.readTemperature(true);
+  
+  // save fahrenheit (or celsius) to Adafruit IO
+  temperature->save(celsius);
+  temperatureF->save(fahrenheit);
+  // save humidity to Adafruit IO
+  humidity->save(humidity_percentage);
+      
+  Serial.print("celsius: ");
+  Serial.print(celsius);
+  Serial.println("C");
+
+  Serial.print("fahrenheit: ");
+  Serial.print(fahrenheit);
+  Serial.println("F");
+  
+  Serial.print("humidity: ");
+  Serial.print(humidity_percentage);
+  Serial.println("%");
+
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  
+  // Sets the trigPin on HIGH state for 10 micro seconds
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  
+  // Reads the echoPin, returns the sound wave travel time in microseconds
+  duration = pulseIn(echoPin, HIGH);
+
+  if (isnan(humidity_percentage) || isnan(celsius) || isnan(fahrenheit)) {
+    Serial.println(F("Failed to read from DHT sensor!"));
+    return;
+  }
+  
+  // Calculating the distance
+  distancecm = duration*0.034/2;
+  // Prints the distance on the Serial Monitor
+  Serial.print("Distance: ");
+  Serial.println(distancecm);
+
+  // save distance to Adafruit IO
+  distance->save(distancecm);
+  
+
 }
